@@ -1,0 +1,6 @@
+apiVersion: v2
+name: jobq
+description: The jobq task scheduler on Kubernetes - API, scheduler, KEDA-scaled workers, PostgreSQL (CloudNativePG), Redis, monitoring and SLOs.
+type: application
+version: 0.3.0
+appVersion: "8b7941f"

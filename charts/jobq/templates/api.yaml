@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: jobq-api, app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: jobq-api, app.kubernetes.io/instance: {{ .Release.Name }} }
+    spec:
+      {{- include "jobq.podSecurity" . | nindent 6 }}
+      nodeSelector: {{- toYaml .Values.systemNodeSelector | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: jobq-api, app.kubernetes.io/instance: {{ .Release.Name }} }
+      initContainers:
+        {{- include "jobq.migrate" . | nindent 8 }}
+      containers:
+        - name: api
+          image: {{ include "jobq.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["api", "--workers", "1"]
+          env:
+            {{- include "jobq.env" . | nindent 12 }}
+            {{- with .Values.bootstrapApiKey }}
+            - name: JOBQ_BOOTSTRAP_API_KEY
+              value: {{ . | quote }}
+            {{- end }}
+            - name: JOBQ_DEFAULT_RATE_PER_S
+              value: "2000"
+            - name: JOBQ_DEFAULT_BURST
+              value: "4000"
+          ports: [{ name: http, containerPort: 8000 }]
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          resources: {{- toYaml .Values.api.resources | nindent 12 }}
+          {{- include "jobq.containerSecurity" . | nindent 10 }}
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+    app.kubernetes.io/name: jobq-api
+spec:
+  selector: { app.kubernetes.io/name: jobq-api, app.kubernetes.io/instance: {{ .Release.Name }} }
+  ports: [{ name: http, port: 8000, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: jobq-api, app.kubernetes.io/instance: {{ .Release.Name }} }
+{{- if .Values.api.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Release.Name }}-api
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ .Release.Name }}-api }
+  minReplicas: {{ .Values.api.hpa.minReplicas }}
+  maxReplicas: {{ .Values.api.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.api.hpa.cpuUtilization }} }
+{{- end }}
+{{- if .Values.gateway.enabled }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.parentRef.name }}
+      namespace: {{ .Values.gateway.parentRef.namespace }}
+  hostnames: [{{ .Values.gateway.host | quote }}]
+  rules:
+    - backendRefs:
+        - name: {{ .Release.Name }}-api
+          port: 8000
+{{- end }}

@@ -1,0 +1,4 @@
+parentRef: { name: traefik-gateway, namespace: traefik }
+routes:
+  grafana: { host: grafana.localhost, service: monitoring-grafana, port: 80 }
+  prometheus: { host: prometheus.localhost, service: monitoring-kube-prometheus-prometheus, port: 9090 }

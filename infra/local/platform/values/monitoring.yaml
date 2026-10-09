@@ -1,0 +1,37 @@
+# kube-prometheus-stack sized for a laptop. Prometheus picks up every ServiceMonitor, PodMonitor
+# and PrometheusRule in the cluster, not only ones labelled for this release.
+prometheus:
+  prometheusSpec:
+    nodeSelector: { pool: system }
+    retention: 2d
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+      limits: { memory: 1536Mi }
+
+grafana:
+  nodeSelector: { pool: system }
+  adminPassword: "${grafana_password}"
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
+  grafana.ini:
+    server:
+      root_url: http://grafana.localhost:8088
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 20m, memory: 64Mi }
+
+# kind's control-plane components listen on localhost only; scraping them just raises alerts.
+kubeEtcd: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeControllerManager: { enabled: false }
+kubeProxy: { enabled: false }

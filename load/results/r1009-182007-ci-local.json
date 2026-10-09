@@ -1,0 +1,50 @@
+{
+  "run_id": "r1009-182007",
+  "label": "ci-local",
+  "params": {
+    "jobs": 4000,
+    "rate": 150.0,
+    "work_ms": 300.0,
+    "kill_node_at": 25.0,
+    "restore_node_at": 90.0,
+    "label": "ci-local",
+    "max_seconds": 900.0
+  },
+  "load": {
+    "run_id": "r1009-182007",
+    "jobs": 4000,
+    "accepted": 4000,
+    "failed": 0,
+    "retries": 0,
+    "target_rate": 150.0,
+    "achieved_rate": 150.0,
+    "seconds": 26.7,
+    "enqueue_ms": {
+      "p50": 1.97,
+      "p95": 3.07,
+      "p99": 5.74
+    }
+  },
+  "audit": {
+    "jobs": 4000,
+    "succeeded": 4000,
+    "dead": 0,
+    "ran_more_than_once": 22,
+    "ledger_rows": 4000,
+    "jobs_without_effect": 0,
+    "jobs_with_duplicate_effects": 0
+  },
+  "events": [
+    {
+      "t": 26.0,
+      "event": "stopped node platform-worker4 (running 1 of 2 workers)"
+    }
+  ],
+  "drained_seconds": 41.9,
+  "peak_worker_replicas": 2.0,
+  "first_scale_up_seconds": 20.9,
+  "peak_db_backends": 67.0,
+  "peak_db_memory_mib": 673.4,
+  "scaled_back_to_min_seconds": 83.4,
+  "audit_passed": true
+}

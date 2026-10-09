@@ -1,0 +1,6 @@
+.DS_Store
+.terraform/
+*.tfstate
+*.tfstate.*
+*-config
+results/tmp/

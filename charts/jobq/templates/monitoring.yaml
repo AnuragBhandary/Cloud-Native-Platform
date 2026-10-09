@@ -1,0 +1,100 @@
+{{- if .Values.monitoring.enabled }}
+{{- $r := .Release.Name }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $r }}-api
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: jobq-api }
+  endpoints: [{ port: http, path: /metrics, interval: 15s }]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ $r }}-processes
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: { jobq.io/metrics: "true", app.kubernetes.io/instance: {{ $r }} }
+  podMetricsEndpoints: [{ port: metrics, interval: 15s }]
+---
+# SLOs as recorded error ratios, alerted on with multi-window, multi-burn-rate rules (Google SRE
+# workbook, chapter 5): page when the 1 h and 5 m windows both burn the budget 14.4x too fast
+# (2% of a 30-day budget in an hour), open a ticket at 6x over 6 h and 30 m.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $r }}-slo
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: jobq-slo-recording
+      rules:
+        {{- range $w := list "5m" "30m" "1h" "6h" }}
+        # (bad events) / (all events). When nothing happened in the window the denominator filter
+        # returns no data, so an idle queue is "no data", not "100% errors" (which would page forever).
+        - record: jobq:slo_pickup_errors:ratio_rate{{ $w }}
+          expr: |
+            (
+              sum(rate(jobq_queue_delay_seconds_count[{{ $w }}]))
+              - sum(rate(jobq_queue_delay_seconds_bucket{le="{{ printf "%.1f" (float64 $.Values.monitoring.slo.pickupSeconds) }}"}[{{ $w }}]))
+            )
+            / (sum(rate(jobq_queue_delay_seconds_count[{{ $w }}])) > 0)
+        - record: jobq:slo_enqueue_errors:ratio_rate{{ $w }}
+          expr: |
+            (
+              sum(rate(jobq_enqueue_seconds_count[{{ $w }}]))
+              - sum(rate(jobq_enqueue_seconds_bucket{le="{{ $.Values.monitoring.slo.enqueueSeconds }}"}[{{ $w }}]))
+            )
+            / (sum(rate(jobq_enqueue_seconds_count[{{ $w }}])) > 0)
+        {{- end }}
+    - name: jobq-slo-alerts
+      rules:
+        {{- range $slo := list (dict "name" "pickup" "objective" $.Values.monitoring.slo.pickupObjective "what" (printf "jobs picked up within %vs" $.Values.monitoring.slo.pickupSeconds))
+                               (dict "name" "enqueue" "objective" $.Values.monitoring.slo.enqueueObjective "what" (printf "enqueues answered within %vs" $.Values.monitoring.slo.enqueueSeconds)) }}
+        {{- $budget := subf 1.0 $slo.objective }}
+        - alert: JobqSLO{{ title $slo.name }}FastBurn
+          expr: |
+            jobq:slo_{{ $slo.name }}_errors:ratio_rate1h > {{ mulf 14.4 $budget }}
+            and jobq:slo_{{ $slo.name }}_errors:ratio_rate5m > {{ mulf 14.4 $budget }}
+          labels: { severity: critical }
+          annotations:
+            summary: "jobq is burning its {{ $slo.what }} error budget 14x too fast"
+        - alert: JobqSLO{{ title $slo.name }}SlowBurn
+          expr: |
+            jobq:slo_{{ $slo.name }}_errors:ratio_rate6h > {{ mulf 6 $budget }}
+            and jobq:slo_{{ $slo.name }}_errors:ratio_rate30m > {{ mulf 6 $budget }}
+          labels: { severity: warning }
+          annotations:
+            summary: "jobq is burning its {{ $slo.what }} error budget 6x too fast"
+        {{- end }}
+    - name: jobq-health
+      rules:
+        - alert: JobqDeadLetters
+          expr: sum(increase(jobq_jobs_finished_total{outcome="dead"}[10m])) > 0
+          labels: { severity: warning }
+          annotations: { summary: "Jobs exhausted their retries and went to the dead-letter queue" }
+        - alert: JobqWorkersAtMaximum
+          expr: kube_deployment_status_replicas{deployment="{{ $r }}-worker"} >= {{ .Values.worker.autoscaling.maxReplicas }}
+          for: 10m
+          labels: { severity: warning }
+          annotations: { summary: "Workers have been at the autoscaling maximum for 10 minutes" }
+        - alert: JobqBacklogGrowing
+          expr: sum(jobq_jobs{status="queued"}) > 5000 and deriv(sum(jobq_jobs{status="queued"})[10m:1m]) > 0
+          for: 10m
+          labels: { severity: warning }
+          annotations: { summary: "Queued jobs keep growing despite autoscaling" }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $r }}-dashboard
+  labels:
+    {{- include "jobq.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  jobq.json: |-
+{{ .Files.Get "dashboards/jobq.json" | indent 4 }}
+{{- end }}

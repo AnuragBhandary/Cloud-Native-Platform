@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-scheduler
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.scheduler.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: jobq-scheduler, app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jobq-scheduler
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        jobq.io/metrics: "true"
+    spec:
+      {{- include "jobq.podSecurity" . | nindent 6 }}
+      nodeSelector: {{- toYaml .Values.systemNodeSelector | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: jobq-scheduler, app.kubernetes.io/instance: {{ .Release.Name }} }
+      initContainers:
+        {{- include "jobq.migrate" . | nindent 8 }}
+      containers:
+        - name: scheduler
+          image: {{ include "jobq.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["scheduler"]
+          env:
+            {{- include "jobq.env" . | nindent 12 }}
+            - name: JOBQ_METRICS_PORT
+              value: "9100"
+            - name: JOBQ_SWEEP_AFTER_S
+              value: "10"
+            - name: JOBQ_GAUGE_INTERVAL_S
+              value: "2"
+          ports: [{ name: metrics, containerPort: 9100 }]
+          livenessProbe:
+            tcpSocket: { port: metrics }
+            periodSeconds: 10
+          resources: {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          {{- include "jobq.containerSecurity" . | nindent 10 }}
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]

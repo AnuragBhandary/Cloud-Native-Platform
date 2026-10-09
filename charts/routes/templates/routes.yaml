@@ -1,0 +1,16 @@
+{{- range $name, $r := .Values.routes }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $name }}
+spec:
+  parentRefs:
+    - name: {{ $.Values.parentRef.name }}
+      namespace: {{ $.Values.parentRef.namespace }}
+  hostnames: [{{ $r.host | quote }}]
+  rules:
+    - backendRefs:
+        - name: {{ $r.service }}
+          port: {{ $r.port }}
+{{- end }}

@@ -1,0 +1,87 @@
+image:
+  repository: jobq
+  tag: "8b7941f"
+  pullPolicy: IfNotPresent
+
+# Bootstrap API key created at startup (local development). In production, create keys with
+# `jobq create-key` and leave this empty.
+bootstrapApiKey: jq_0000000000de_local-dev-key-not-for-production
+
+# Node pools: everything but the workers runs on pool=system; workers run on pool=jobs.
+systemNodeSelector: { pool: system }
+
+api:
+  replicas: 2
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 384Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    cpuUtilization: 70
+
+scheduler:
+  # Every scheduler loop is safe to run concurrently (no leader election), so two give HA.
+  replicas: 2
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { memory: 256Mi }
+
+worker:
+  nodeSelector: { pool: jobs }
+  tasks: jobq.examples.tasks
+  queues: default
+  concurrency: 32
+  leaseSeconds: 10
+  heartbeatSeconds: 3
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 384Mi }
+  # Evict pods from a dead node after 15 s instead of the default 5 minutes. Their jobs' leases
+  # expire meanwhile and other workers take them over.
+  nodeFailureToleranceSeconds: 15
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 10
+    # Undelivered stream entries per worker replica before KEDA adds one. A worker holds
+    # `concurrency` jobs, so this is about one replica's worth of waiting work.
+    lagPerReplica: 32
+    pollingInterval: 5
+    cooldownPeriod: 60
+
+postgres:
+  # CloudNativePG: a primary and a streaming replica; the operator fails over on its own.
+  instances: 2
+  storage: 2Gi
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  # PgBouncer in front (transaction pooling). KEDA can run 10 workers, each with a pool of up to
+  # 20 connections; straight to PostgreSQL that once meant 100+ backends and an OOM-killed primary.
+  # Through the pooler, PostgreSQL sees at most instances x serverPoolSize connections.
+  pooler:
+    enabled: true
+    instances: 2
+    serverPoolSize: 25
+    maxClientConnections: 2000
+
+redis:
+  image: redis:7-alpine
+  storage: 1Gi
+
+gateway:
+  enabled: true
+  host: jobq.localhost
+  parentRef: { name: traefik-gateway, namespace: traefik }
+
+monitoring:
+  enabled: true
+  slo:
+    # 99% of jobs claimed by a worker within 5 s of becoming due.
+    pickupSeconds: 5
+    pickupObjective: 0.99
+    # 99% of enqueue requests answered within 100 ms.
+    enqueueSeconds: 0.1
+    enqueueObjective: 0.99

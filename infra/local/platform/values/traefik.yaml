@@ -1,0 +1,27 @@
+# Traefik as the Gateway API implementation. Locally its web entrypoint is a NodePort (30080) that
+# kind publishes on localhost:8088; on EKS the service type comes from environment.tf.
+providers:
+  kubernetesGateway:
+    enabled: true
+  kubernetesIngress:
+    enabled: false
+gateway:
+  enabled: true
+  listeners:
+    web:
+      port: 8000
+      protocol: HTTP
+      namespacePolicy:
+        from: All
+ports:
+  web:
+    nodePort: 30080
+  websecure:
+    expose:
+      default: false
+nodeSelector:
+  pool: system
+metrics:
+  prometheus:
+    serviceMonitor:
+      enabled: true

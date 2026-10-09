@@ -1,0 +1,41 @@
+{
+  "run_id": "r1009-174416",
+  "label": "smoke",
+  "params": {
+    "jobs": 2000,
+    "rate": 200.0,
+    "work_ms": 200.0,
+    "kill_node_at": null,
+    "restore_node_at": null,
+    "label": "smoke"
+  },
+  "load": {
+    "run_id": "r1009-174416",
+    "jobs": 2000,
+    "accepted": 2000,
+    "failed": 0,
+    "retries": 0,
+    "target_rate": 200.0,
+    "achieved_rate": 200.0,
+    "seconds": 10.0,
+    "enqueue_ms": {
+      "p50": 1.65,
+      "p95": 2.7,
+      "p99": 5.67
+    }
+  },
+  "audit": {
+    "jobs": 2000,
+    "succeeded": 2000,
+    "dead": 0,
+    "ran_more_than_once": 0,
+    "ledger_rows": 2000,
+    "jobs_without_effect": 0,
+    "jobs_with_duplicate_effects": 0
+  },
+  "events": [],
+  "drained_seconds": 15.6,
+  "peak_worker_replicas": 2.0,
+  "first_scale_up_seconds": 26.0,
+  "scaled_back_to_min_seconds": 88.3
+}
