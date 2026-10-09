@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.worker.autoscaling.enabled }}
+  replicas: {{ .Values.worker.autoscaling.minReplicas }}
+  {{- end }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: jobq-worker, app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jobq-worker
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        jobq.io/metrics: "true"
+    spec:
+      {{- include "jobq.podSecurity" . | nindent 6 }}
+      nodeSelector: {{- toYaml .Values.worker.nodeSelector | nindent 8 }}
+      # A worker finishes or releases its jobs on SIGTERM within JOBQ_SHUTDOWN_GRACE_S (25 s).
+      terminationGracePeriodSeconds: 40
+      tolerations:
+        - { key: dedicated, operator: Equal, value: jobs, effect: NoSchedule }
+        - { key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: {{ .Values.worker.nodeFailureToleranceSeconds }} }
+        - { key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: {{ .Values.worker.nodeFailureToleranceSeconds }} }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: jobq-worker, app.kubernetes.io/instance: {{ .Release.Name }} }
+      initContainers:
+        {{- include "jobq.migrate" . | nindent 8 }}
+      containers:
+        - name: worker
+          image: {{ include "jobq.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["worker", "--tasks", {{ .Values.worker.tasks | quote }}, "--queues", {{ .Values.worker.queues | quote }},
+                 "--concurrency", {{ .Values.worker.concurrency | quote }}]
+          env:
+            {{- include "jobq.env" . | nindent 12 }}
+            - name: JOBQ_METRICS_PORT
+              value: "9100"
+            - name: JOBQ_LEASE_S
+              value: {{ .Values.worker.leaseSeconds | quote }}
+            - name: JOBQ_HEARTBEAT_INTERVAL_S
+              value: {{ .Values.worker.heartbeatSeconds | quote }}
+          ports: [{ name: metrics, containerPort: 9100 }]
+          livenessProbe:
+            tcpSocket: { port: metrics }
+            periodSeconds: 10
+          resources: {{- toYaml .Values.worker.resources | nindent 12 }}
+          {{- include "jobq.containerSecurity" . | nindent 10 }}
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+{{- if .Values.worker.autoscaling.enabled }}
+---
+# Scale workers on the queue itself: the consumer group's lag on the stream is the work no worker
+# has had room to take yet (workers read only as many jobs as they have free slots).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { name: {{ .Release.Name }}-worker }
+  minReplicaCount: {{ .Values.worker.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.worker.autoscaling.maxReplicas }}
+  pollingInterval: {{ .Values.worker.autoscaling.pollingInterval }}
+  cooldownPeriod: {{ .Values.worker.autoscaling.cooldownPeriod }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies: [{ type: Percent, value: 100, periodSeconds: 15 }]
+        scaleDown:
+          stabilizationWindowSeconds: 60
+          policies: [{ type: Pods, value: 2, periodSeconds: 30 }]
+  triggers:
+    {{- range splitList "," .Values.worker.queues }}
+    - type: redis-streams
+      metadata:
+        address: {{ $.Release.Name }}-redis.{{ $.Release.Namespace }}.svc:6379
+        stream: jobq:q:{{ trim . }}
+        consumerGroup: workers
+        lagCount: {{ $.Values.worker.autoscaling.lagPerReplica | quote }}
+        activationLagCount: "1"
+    {{- end }}
+{{- end }}

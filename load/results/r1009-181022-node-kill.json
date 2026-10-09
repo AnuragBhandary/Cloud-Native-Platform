@@ -1,0 +1,52 @@
+{
+  "run_id": "r1009-181022",
+  "label": "node-kill",
+  "params": {
+    "jobs": 20000,
+    "rate": 400.0,
+    "work_ms": 500.0,
+    "kill_node_at": 40.0,
+    "restore_node_at": 130.0,
+    "label": "node-kill"
+  },
+  "load": {
+    "run_id": "r1009-181022",
+    "jobs": 20000,
+    "accepted": 20000,
+    "failed": 0,
+    "retries": 0,
+    "target_rate": 400.0,
+    "achieved_rate": 399.9,
+    "seconds": 50.0,
+    "enqueue_ms": {
+      "p50": 2.02,
+      "p95": 6.36,
+      "p99": 24.84
+    }
+  },
+  "audit": {
+    "jobs": 20000,
+    "succeeded": 20000,
+    "dead": 0,
+    "ran_more_than_once": 117,
+    "ledger_rows": 20000,
+    "jobs_without_effect": 0,
+    "jobs_with_duplicate_effects": 0
+  },
+  "events": [
+    {
+      "t": 41.9,
+      "event": "stopped node platform-worker3 (running 4 of 8 workers)"
+    },
+    {
+      "t": 130.9,
+      "event": "restored node platform-worker3"
+    }
+  ],
+  "drained_seconds": 84.0,
+  "peak_worker_replicas": 10.0,
+  "first_scale_up_seconds": 21.0,
+  "peak_db_backends": 67.0,
+  "peak_db_memory_mib": 653.6,
+  "scaled_back_to_min_seconds": 261.2
+}

@@ -1,0 +1,60 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Release.Name }}-db
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.postgres.instances }}
+  storage:
+    size: {{ .Values.postgres.storage }}
+  resources: {{- toYaml .Values.postgres.resources | nindent 4 }}
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: 128MB
+  bootstrap:
+    initdb:
+      database: jobq
+      owner: jobq   # the operator writes the credentials to the <name>-app secret
+  affinity:
+    topologyKey: kubernetes.io/hostname   # primary and replica on different nodes
+    nodeSelector: {{- toYaml .Values.systemNodeSelector | nindent 6 }}
+{{- if .Values.postgres.pooler.enabled }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: {{ .Release.Name }}-db-pooler-rw
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  cluster: { name: {{ .Release.Name }}-db }
+  instances: {{ .Values.postgres.pooler.instances }}
+  type: rw
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.enabled }}
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      default_pool_size: {{ .Values.postgres.pooler.serverPoolSize | quote }}
+      max_client_conn: {{ .Values.postgres.pooler.maxClientConnections | quote }}
+      # asyncpg uses named prepared statements; PgBouncer tracks them across server connections.
+      max_prepared_statements: "500"
+  template:
+    spec:
+      nodeSelector: {{- toYaml .Values.systemNodeSelector | nindent 8 }}
+      containers: []
+{{- end }}
+{{- if .Values.monitoring.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Release.Name }}-db
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Release.Name }}-db
+  podMetricsEndpoints:
+    - port: metrics
+{{- end }}

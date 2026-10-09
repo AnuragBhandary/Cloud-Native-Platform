@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.5
+      - uses: azure/setup-helm@v4
+      - name: Terraform format
+        run: terraform fmt -check -recursive infra
+      - name: Terraform validate (local cluster, local platform, AWS)
+        run: |
+          for dir in infra/local/cluster infra/local/platform infra/aws; do
+            terraform -chdir=$dir init -backend=false -input=false >/dev/null
+            terraform -chdir=$dir validate
+          done
+      - name: Helm lint and schema validation
+        run: |
+          helm lint charts/jobq charts/routes
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar -xz kubeconform
+          helm template jobq charts/jobq -n jobq | ./kubeconform -strict -ignore-missing-schemas -summary \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+      - name: Dashboard JSON is generated from its script
+        run: |
+          python3 dashboards/build_jobq_dashboard.py
+          git diff --exit-code charts/jobq/dashboards/jobq.json
+
+  e2e:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AnuragBhandary/Distributed-Job-Scheduler
+          path: Distributed-Job-Scheduler
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+      - uses: azure/setup-helm@v4
+      - name: Install kind
+        run: |
+          curl -sSLo kind https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          sudo install -m 755 kind /usr/local/bin/kind
+      - name: Build the platform from nothing (cluster, add-ons, monitoring, gateway, jobq)
+        run: make up SCHEDULER_REPO=Distributed-Job-Scheduler
+      - name: Load test with a jobs node killed mid-run; fails unless every job ran exactly once
+        run: python3 load/experiment.py --jobs 4000 --rate 150 --work-ms 300 --kill-node-at 25 --restore-node-at 90 --label ci --max-seconds 900
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: experiment-results
+          path: load/results/*-ci.*
+      - if: failure()
+        run: |
+          kubectl --context kind-platform get pods -A -o wide
+          kubectl --context kind-platform -n jobq get events --sort-by=.lastTimestamp | tail -50

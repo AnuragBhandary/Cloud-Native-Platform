@@ -1,0 +1,52 @@
+# Redis only carries dispatch hints and rate-limit buckets; PostgreSQL is the source of truth, so
+# a single instance with an append-only file is enough (jobq's sweeper re-dispatches lost hints).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-redis
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: redis, app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: redis, app.kubernetes.io/instance: {{ .Release.Name }} }
+    spec:
+      enableServiceLinks: false
+      nodeSelector: {{- toYaml .Values.systemNodeSelector | nindent 8 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image }}
+          args: ["--appendonly", "yes", "--appendfsync", "everysec"]
+          ports: [{ name: redis, containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts: [{ name: data, mountPath: /data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: {{ .Values.redis.storage }} } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels: {{- include "jobq.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: redis, app.kubernetes.io/instance: {{ .Release.Name }} }
+  ports: [{ name: redis, port: 6379, targetPort: redis }]

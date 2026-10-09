@@ -1,0 +1,43 @@
+{
+  "run_id": "r1009-180602",
+  "label": "autoscale",
+  "params": {
+    "jobs": 20000,
+    "rate": 400.0,
+    "work_ms": 500.0,
+    "kill_node_at": null,
+    "restore_node_at": null,
+    "label": "autoscale"
+  },
+  "load": {
+    "run_id": "r1009-180602",
+    "jobs": 20000,
+    "accepted": 20000,
+    "failed": 0,
+    "retries": 0,
+    "target_rate": 400.0,
+    "achieved_rate": 400.0,
+    "seconds": 50.0,
+    "enqueue_ms": {
+      "p50": 1.81,
+      "p95": 4.5,
+      "p99": 12.15
+    }
+  },
+  "audit": {
+    "jobs": 20000,
+    "succeeded": 20000,
+    "dead": 0,
+    "ran_more_than_once": 0,
+    "ledger_rows": 20000,
+    "jobs_without_effect": 0,
+    "jobs_with_duplicate_effects": 0
+  },
+  "events": [],
+  "drained_seconds": 67.7,
+  "peak_worker_replicas": 10.0,
+  "first_scale_up_seconds": 26.0,
+  "peak_db_backends": 67.0,
+  "peak_db_memory_mib": 504.9,
+  "scaled_back_to_min_seconds": 250.2
+}
