@@ -103,5 +103,5 @@ charts/jobq/            API, scheduler, workers, KEDA ScaledObject, HPA, PDB, Po
 charts/routes/          HTTPRoutes for Grafana and Prometheus
 dashboards/             generator for the dashboard JSON
 load/                   in-cluster load generator, experiment runner (chaos + audit), results/
-docs/                   DESIGN.md, BENCHMARKS.md, AWS.md, INTERVIEW.md
+docs/                   DESIGN.md, BENCHMARKS.md, AWS.md
 ```
